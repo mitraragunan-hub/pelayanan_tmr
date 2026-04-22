@@ -1,0 +1,298 @@
+import React, { useState, useEffect } from 'react';
+import { db } from './firebase'; 
+import { collection, addDoc, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
+import { 
+  Users, UserPlus, GraduationCap, BookOpen, Globe, 
+  ClipboardList, PlusCircle, Save, CheckCircle, Clock, Zap,
+  BarChart2, Activity, Filter, Calendar
+} from 'lucide-react';
+
+export default function App() {
+  const [activeMenu, setActiveMenu] = useState('form'); 
+  const [selectedService, setSelectedService] = useState('lansia');
+  const [reportFilter, setReportFilter] = useState('all');
+  
+  // State tersambung ke Firebase
+  const [records, setRecords] = useState([]);
+  const [masterDataLansia, setMasterDataLansia] = useState({});
+  const [masterDataKJP, setMasterDataKJP] = useState({});
+  
+  const [showToast, setShowToast] = useState(false);
+  const [isAutoFilled, setIsAutoFilled] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [formData, setFormData] = useState({
+    tglKunjungan: new Date().toISOString().split('T')[0],
+    nik: '', nama: '', tempatLahir: '', tglLahir: '', alamat: '',
+    jenisDisabilitas: 'Pribadi', namaInstansi: '', noSurat: '',
+    nisn: '', namaSekolah: '', jenjang: 'SD',
+    jumlahMurid: '', diskonRombongan: 'Tidak',
+    asalNegara: '', kategoriUmur: 'Dewasa', jumlahWisman: '1'
+  });
+
+  // MENGAMBIL DATA DARI FIREBASE SECARA REALTIME
+  useEffect(() => {
+    // 1. Ambil Riwayat Kunjungan
+    const q = query(collection(db, 'kunjungan'), orderBy('timestamp', 'desc'));
+    const unsubKunjungan = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRecords(data);
+    });
+
+    // 2. Ambil Master Data Lansia
+    const unsubLansia = onSnapshot(collection(db, 'master_lansia'), (snap) => {
+      const data = {};
+      snap.forEach(doc => { data[doc.id] = doc.data(); });
+      setMasterDataLansia(data);
+    });
+
+    // 3. Ambil Master Data KJP
+    const unsubKJP = onSnapshot(collection(db, 'master_kjp'), (snap) => {
+      const data = {};
+      snap.forEach(doc => { data[doc.id] = doc.data(); });
+      setMasterDataKJP(data);
+    });
+
+    return () => { unsubKunjungan(); unsubLansia(); unsubKJP(); };
+  }, []);
+
+  // Logika Auto-fill NIK & NISN
+  useEffect(() => {
+    if (selectedService === 'lansia' && formData.nik.length >= 16) {
+      const dataPenduduk = masterDataLansia[formData.nik];
+      if (dataPenduduk) {
+        setFormData(prev => ({ ...prev, nama: dataPenduduk.nama, tempatLahir: dataPenduduk.tempatLahir, tglLahir: dataPenduduk.tglLahir, alamat: dataPenduduk.alamat }));
+        setIsAutoFilled(true);
+      } else { setIsAutoFilled(false); }
+    } else { setIsAutoFilled(false); }
+  }, [formData.nik, selectedService, masterDataLansia]);
+
+  useEffect(() => {
+    if (selectedService === 'kjp' && formData.nisn.length >= 8) {
+      const dataSiswa = masterDataKJP[formData.nisn];
+      if (dataSiswa) {
+        setFormData(prev => ({ ...prev, nama: dataSiswa.nama, namaSekolah: dataSiswa.namaSekolah, jenjang: dataSiswa.jenjang }));
+        setIsAutoFilled(true);
+      } else { setIsAutoFilled(false); }
+    } else { setIsAutoFilled(false); }
+  }, [formData.nisn, selectedService, masterDataKJP]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    if (isAutoFilled && !['nik', 'nisn', 'tglKunjungan'].includes(name)) setIsAutoFilled(false);
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const getKategoriKJP = (jenjang) => {
+    if (['TK/KB', 'SD'].includes(jenjang)) return 'Anak';
+    if (['SMP', 'SMA', 'Perguruan Tinggi'].includes(jenjang)) return 'Dewasa';
+    return '';
+  };
+
+  const monthlySummary = records.reduce((acc, record) => {
+    const monthYear = record.tglKunjungan.substring(0, 7);
+    if (!acc[monthYear]) acc[monthYear] = { lansia: 0, disabilitas: 0, kjp: 0, rombongan: 0, wisman: 0, total: 0 };
+    acc[monthYear][record.layanan] += record.headCount;
+    acc[monthYear].total += record.headCount;
+    return acc;
+  }, {});
+  const sortedMonths = Object.keys(monthlySummary).sort((a, b) => b.localeCompare(a));
+  const formatMonthYear = (yyyyMm) => {
+    const [year, month] = yyyMm.split('-');
+    const date = new Date(year, month - 1);
+    return date.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+  };
+
+  // FUNGSI SIMPAN KE FIREBASE
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true); 
+    
+    let newRecord = {
+      layanan: selectedService, tglKunjungan: formData.tglKunjungan,
+      timestamp: new Date().toISOString(), timestampTampil: new Date().toLocaleString('id-ID'),
+      details: {}, headCount: 1 
+    };
+
+    try {
+        switch (selectedService) {
+        case 'lansia':
+            newRecord.details = { NIK: formData.nik, Nama: formData.nama, TTL: `${formData.tempatLahir}, ${formData.tglLahir}`, Alamat: formData.alamat };
+            await setDoc(doc(db, 'master_lansia', formData.nik), { nama: formData.nama, tempatLahir: formData.tempatLahir, tglLahir: formData.tglLahir, alamat: formData.alamat });
+            break;
+        case 'disabilitas':
+            newRecord.details = { Jenis: formData.jenisDisabilitas, 'Nama/Instansi': formData.namaInstansi, ...(formData.jenisDisabilitas === 'Rombongan' && { 'No Surat': formData.noSurat }), Alamat: formData.alamat };
+            break;
+        case 'kjp':
+            newRecord.details = { NISN: formData.nisn, Nama: formData.nama, 'Asal Sekolah/PT': formData.namaSekolah, Jenjang: formData.jenjang, Kategori: getKategoriKJP(formData.jenjang) };
+            await setDoc(doc(db, 'master_kjp', formData.nisn), { nama: formData.nama, namaSekolah: formData.namaSekolah, jenjang: formData.jenjang });
+            break;
+        case 'rombongan':
+            newRecord.details = { 'Nama Sekolah': formData.namaSekolah, 'Jenjang': formData.jenjang, 'Jumlah Murid': formData.jumlahMurid, 'Potongan Harga': formData.diskonRombongan };
+            newRecord.headCount = parseInt(formData.jumlahMurid) || 1;
+            break;
+        case 'wisman':
+            newRecord.details = { 'Asal Negara': formData.asalNegara, Kategori: formData.kategoriUmur, 'Jumlah Pengunjung': formData.jumlahWisman };
+            newRecord.headCount = parseInt(formData.jumlahWisman) || 1;
+            break;
+        }
+
+        await addDoc(collection(db, 'kunjungan'), newRecord);
+        
+        setFormData({
+            tglKunjungan: formData.tglKunjungan, nik: '', nama: '', tempatLahir: '', tglLahir: '', alamat: '',
+            jenisDisabilitas: 'Pribadi', namaInstansi: '', noSurat: '', nisn: '', namaSekolah: '', jenjang: 'SD', 
+            jumlahMurid: '', diskonRombongan: 'Tidak', asalNegara: '', kategoriUmur: 'Dewasa', jumlahWisman: '1'
+        });
+        setIsAutoFilled(false);
+        setShowToast(true); setTimeout(() => setShowToast(false), 3000);
+    } catch (error) {
+        console.error(error); alert("Gagal menyimpan data! Pastikan Firestore dalam mode Test.");
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
+  const ServiceButton = ({ id, label, icon: Icon }) => (
+    <button type="button" onClick={() => { setSelectedService(id); setIsAutoFilled(false); }}
+      className={`flex items-center space-x-2 px-4 py-3 rounded-xl transition-all duration-200 w-full md:w-auto ${selectedService === id ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+      <Icon size={20} className={selectedService === id ? 'text-white' : 'text-blue-500'} />
+      <span className="font-medium text-sm md:text-base">{label}</span>
+    </button>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center space-x-3">
+              <div className="bg-blue-600 p-2 rounded-lg"><ClipboardList className="h-6 w-6 text-white" /></div>
+              <span className="text-xl font-bold text-slate-800">Layanan<span className="text-blue-600">Terpadu</span></span>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button onClick={() => setActiveMenu('form')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'form' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><PlusCircle size={18} /> <span className="hidden sm:inline">Input Data</span></button>
+              <button onClick={() => setActiveMenu('dashboard')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><BarChart2 size={18} /> <span className="hidden sm:inline">Laporan</span></button>
+              <button onClick={() => setActiveMenu('data')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'data' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><ClipboardList size={18} /> <span className="hidden sm:inline">Data</span>{records.length > 0 && (<span className="ml-2 bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs font-bold">{records.length}</span>)}</button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {showToast && (<div className="fixed top-20 right-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 z-50 animate-bounce"><CheckCircle className="text-emerald-500" size={20} /><span className="font-medium">Data berhasil disimpan ke Firebase!</span></div>)}
+
+        {activeMenu === 'dashboard' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col"><span className="text-slate-500 text-sm font-medium mb-1">Total Pengunjung</span><span className="text-3xl font-bold text-slate-800 flex items-end space-x-2"><span>{records.reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-slate-400 mb-1">Orang</span></span></div>
+              <div className="bg-blue-50 p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col"><span className="text-blue-600 text-sm font-medium mb-1">Total Rombongan</span><span className="text-3xl font-bold text-blue-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'rombongan').reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-blue-600 mb-1">Siswa</span></span></div>
+              <div className="bg-emerald-50 p-6 rounded-2xl shadow-sm border border-emerald-100 flex flex-col"><span className="text-emerald-600 text-sm font-medium mb-1">Wisatawan Asing</span><span className="text-3xl font-bold text-emerald-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'wisman').reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-emerald-600 mb-1">Orang</span></span></div>
+              <div className="bg-amber-50 p-6 rounded-2xl shadow-sm border border-amber-100 flex flex-col"><span className="text-amber-600 text-sm font-medium mb-1">Layanan Prioritas</span><span className="text-3xl font-bold text-amber-800 flex items-end space-x-2"><span>{records.filter(r => ['lansia', 'disabilitas', 'kjp'].includes(r.layanan)).length}</span><span className="text-sm font-normal text-amber-600 mb-1">Pemohon</span></span></div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center"><Activity size={18} className="mr-2 text-blue-600"/> Laporan Detail</h3>
+                  <div className="flex items-center space-x-2"><Filter size={16} className="text-slate-400" /><select value={reportFilter} onChange={(e) => setReportFilter(e.target.value)} className="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg p-2 outline-none"><option value="all">Semua Kategori</option><option value="lansia">Lansia</option><option value="disabilitas">SLB / Disabilitas</option><option value="kjp">KJP</option><option value="rombongan">Rombongan Sekolah</option><option value="wisman">Wisatawan Asing</option></select></div>
+                </div>
+                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Tanggal</th><th className="px-6 py-3">Kategori</th><th className="px-6 py-3">Detail Layanan</th><th className="px-6 py-3 text-center">Jml Pengunjung</th></tr></thead><tbody>{records.filter(r => reportFilter === 'all' || r.layanan === reportFilter).map(record => (<tr key={record.id} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 whitespace-nowrap">{record.tglKunjungan}</td><td className="px-6 py-4 uppercase font-medium text-slate-700"><span className={`px-2 py-1 rounded-md text-xs font-bold ${record.layanan === 'lansia' ? 'bg-purple-100 text-purple-700' : record.layanan === 'disabilitas' ? 'bg-red-100 text-red-700' : record.layanan === 'kjp' ? 'bg-yellow-100 text-yellow-700' : record.layanan === 'rombongan' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{record.layanan}</span></td><td className="px-6 py-4 text-slate-800">{record.layanan === 'lansia' && `${record.details.Nama} (NIK: ${record.details.NIK})`}{record.layanan === 'disabilitas' && `${record.details['Nama/Instansi']} (${record.details.Jenis})`}{record.layanan === 'kjp' && `${record.details.Nama} - ${record.details['Asal Sekolah/PT']}`}{record.layanan === 'rombongan' && (<div><span className="font-medium">{record.details['Nama Sekolah']}</span> ({record.details.Jenjang})<div className="text-xs text-slate-500 mt-1">Diskon: <span className={record.details['Potongan Harga'] === 'Ya' ? 'text-emerald-600 font-bold' : ''}>{record.details['Potongan Harga']}</span></div></div>)}{record.layanan === 'wisman' && `${record.details['Asal Negara']} (${record.details.Kategori})`}</td><td className="px-6 py-4 text-center font-bold text-slate-800">{record.headCount} <span className="text-xs font-normal text-slate-400">org</span></td></tr>))}</tbody></table></div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center"><h3 className="text-lg font-semibold text-slate-800 flex items-center"><Calendar size={18} className="mr-2 text-blue-600"/> Rekap Bulanan</h3></div>
+                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Bulan & Tahun</th><th className="px-6 py-3 text-center">Lansia</th><th className="px-6 py-3 text-center">SLB/Disabilitas</th><th className="px-6 py-3 text-center">KJP</th><th className="px-6 py-3 text-center">Rombongan</th><th className="px-6 py-3 text-center">Wisman</th><th className="px-6 py-3 text-center bg-blue-50 font-bold text-blue-800">TOTAL</th></tr></thead><tbody>{sortedMonths.map(month => (<tr key={month} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-800 whitespace-nowrap">{formatMonthYear(month)}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].lansia}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].disabilitas}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].kjp}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].rombongan}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].wisman}</td><td className="px-6 py-4 text-center font-bold text-blue-700 bg-blue-50/30">{monthlySummary[month].total}</td></tr>))}</tbody></table></div>
+            </div>
+          </div>
+        )}
+
+        {activeMenu === 'form' && (
+          <div className="space-y-6">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+              <div className="grid grid-cols-2 md:flex md:flex-row gap-3">
+                <ServiceButton id="lansia" label="Lansia (KTP)" icon={UserPlus} />
+                <ServiceButton id="disabilitas" label="SLB / Disabilitas" icon={Users} />
+                <ServiceButton id="kjp" label="KJP" icon={GraduationCap} />
+                <ServiceButton id="rombongan" label="Rombongan" icon={BookOpen} />
+                <ServiceButton id="wisman" label="Wisatawan Asing" icon={Globe} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-slate-800 capitalize">Form - {selectedService.replace('-', ' ')}</h3>
+                {isAutoFilled && (<span className="flex items-center text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md"><Zap size={14} className="mr-1" />Terisi Otomatis</span>)}
+              </div>
+              
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                <div className="w-full md:w-1/3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Tanggal Kunjungan</label>
+                  <input type="date" name="tglKunjungan" required value={formData.tglKunjungan} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                  {selectedService === 'lansia' && (<>
+                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik 16 digit NIK. Data lama akan terisi otomatis.</p></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">NIK KTP</label><input type="number" name="nik" required value={formData.nik} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Nama Lengkap</label><input type="text" name="nama" required value={formData.nama} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Tempat Lahir</label><input type="text" name="tempatLahir" required value={formData.tempatLahir} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Tgl Lahir</label><input type="date" name="tglLahir" required value={formData.tglLahir} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Alamat</label><textarea name="alamat" required value={formData.alamat} onChange={handleInputChange} rows="2" className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`}></textarea></div>
+                  </>)}
+
+                  {selectedService === 'disabilitas' && (<>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Jenis</label><div className="flex space-x-4"><label><input type="radio" name="jenisDisabilitas" value="Pribadi" checked={formData.jenisDisabilitas === 'Pribadi'} onChange={handleInputChange} className="mr-2"/>Pribadi</label><label><input type="radio" name="jenisDisabilitas" value="Rombongan" checked={formData.jenisDisabilitas === 'Rombongan'} onChange={handleInputChange} className="mr-2"/>Rombongan</label></div></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">{formData.jenisDisabilitas === 'Pribadi' ? 'Nama' : 'Nama Instansi'}</label><input type="text" name="namaInstansi" required value={formData.namaInstansi} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
+                    {formData.jenisDisabilitas === 'Rombongan' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">No Surat</label><input type="text" name="noSurat" required value={formData.noSurat} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>)}
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Alamat</label><textarea name="alamat" required value={formData.alamat} onChange={handleInputChange} rows="2" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none"></textarea></div>
+                  </>)}
+
+                  {selectedService === 'kjp' && (<>
+                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik NISN, data lama akan terisi otomatis.</p></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">NISN</label><input type="number" name="nisn" required value={formData.nisn} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Nama Siswa</label><input type="text" name="nama" required value={formData.nama} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Asal Sekolah</label><input type="text" name="namaSekolah" required value={formData.namaSekolah} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Jenjang</label><select name="jenjang" value={formData.jenjang} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300 bg-white'}`}><option value="TK/KB">TK/KB</option><option value="SD">SD</option><option value="SMP">SMP</option><option value="SMA">SMA</option><option value="Perguruan Tinggi">Perguruan Tinggi</option></select></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label><input type="text" readOnly value={getKategoriKJP(formData.jenjang)} className="w-full px-4 py-2 border border-slate-200 bg-slate-100 text-slate-600 rounded-lg outline-none" /></div>
+                    </div>
+                  </>)}
+
+                  {selectedService === 'rombongan' && (<>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nama Sekolah</label><input type="text" name="namaSekolah" required value={formData.namaSekolah} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jenjang</label><select name="jenjang" value={formData.jenjang} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white"><option value="TK/KB">TK/KB</option><option value="SD">SD</option><option value="SMP">SMP</option><option value="SMA">SMA</option><option value="Perguruan Tinggi">Perguruan Tinggi</option></select></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah Murid</label><input type="number" name="jumlahMurid" required value={formData.jumlahMurid} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Dapat Diskon?</label><div className="flex space-x-6"><label className="flex items-center space-x-2 bg-slate-50 px-4 py-2 border rounded-lg"><input type="radio" name="diskonRombongan" value="Tidak" checked={formData.diskonRombongan === 'Tidak'} onChange={handleInputChange} className="mr-2"/>Tidak Ada</label><label className="flex items-center space-x-2 bg-emerald-50 px-4 py-2 border border-emerald-200 rounded-lg"><input type="radio" name="diskonRombongan" value="Ya" checked={formData.diskonRombongan === 'Ya'} onChange={handleInputChange} className="mr-2"/>Ya, Diskon</label></div></div>
+                  </>)}
+
+                  {selectedService === 'wisman' && (<>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Asal Negara</label><input type="text" name="asalNegara" required value={formData.asalNegara} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label><select name="kategoriUmur" value={formData.kategoriUmur} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white"><option value="Dewasa">Dewasa</option><option value="Anak">Anak</option></select></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah</label><input type="number" min="1" name="jumlahWisman" required value={formData.jumlahWisman} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
+                  </>)}
+                </div>
+                <div className="pt-6 border-t border-slate-100 flex justify-end"><button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-xl flex items-center space-x-2 disabled:bg-blue-300"><Save size={18} /><span>{isLoading ? 'Menyimpan...' : 'Simpan ke Cloud'}</span></button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {activeMenu === 'data' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center"><h3 className="text-lg font-semibold text-slate-800">Database Firebase</h3><span className="text-sm text-emerald-600 flex items-center space-x-1 font-medium"><Cloud size={14} /> <span>Live Sinkronisasi</span></span></div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {records.map((record) => (
+                  <div key={record.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-3"><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md uppercase">{record.layanan}</span><span className="text-xs text-slate-400">{record.tglKunjungan}</span></div>
+                    <div className="space-y-2 text-sm">{Object.entries(record.details).map(([key, value]) => (<div key={key} className="flex flex-col"><span className="text-slate-500 text-xs">{key}</span><span className="font-medium">{value || '-'}</span></div>))}</div>
+                    <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] text-slate-400 text-right">{record.timestampTampil}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
