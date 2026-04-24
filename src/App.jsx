@@ -1,11 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { db } from './firebase'; 
-import { collection, addDoc, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
 import { 
   Users, UserPlus, GraduationCap, BookOpen, Globe, 
   ClipboardList, PlusCircle, Save, CheckCircle, Clock, Zap,
-  BarChart2, Activity, Filter, Calendar
+  BarChart2, Activity, Filter, Calendar, Cloud
 } from 'lucide-react';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAQ4J0orZMgNYz1jPi-2-Io4_0hTXgnvBs",
+  authDomain: "datalayanangratis.firebaseapp.com",
+  projectId: "datalayanangratis",
+  storageBucket: "datalayanangratis.firebasestorage.app",
+  messagingSenderId: "269081913775",
+  appId: "1:269081913775:web:f8b3c5ab0a6661bb94e75a"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 export default function App() {
   const [activeMenu, setActiveMenu] = useState('form'); 
@@ -37,6 +49,8 @@ export default function App() {
     const unsubKunjungan = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRecords(data);
+    }, (error) => {
+      console.error("Error fetching data:", error);
     });
 
     // 2. Ambil Master Data Lansia
@@ -56,26 +70,30 @@ export default function App() {
     return () => { unsubKunjungan(); unsubLansia(); unsubKJP(); };
   }, []);
 
-  // Logika Auto-fill NIK & NISN
-  useEffect(() => {
-    if (selectedService === 'lansia' && formData.nik.length >= 16) {
-      const dataPenduduk = masterDataLansia[formData.nik];
+  // FUNGSI PENGECEKAN DATA (Dijalankan saat petugas pindah kolom atau tekan Enter)
+  const handleAutoFillCheck = (type, value) => {
+    if (type === 'lansia' && value) {
+      const dataPenduduk = masterDataLansia[value];
       if (dataPenduduk) {
         setFormData(prev => ({ ...prev, nama: dataPenduduk.nama, tempatLahir: dataPenduduk.tempatLahir, tglLahir: dataPenduduk.tglLahir, alamat: dataPenduduk.alamat }));
         setIsAutoFilled(true);
       } else { setIsAutoFilled(false); }
-    } else { setIsAutoFilled(false); }
-  }, [formData.nik, selectedService, masterDataLansia]);
-
-  useEffect(() => {
-    if (selectedService === 'kjp' && formData.nisn.length >= 8) {
-      const dataSiswa = masterDataKJP[formData.nisn];
+    } else if (type === 'kjp' && value) {
+      const dataSiswa = masterDataKJP[value];
       if (dataSiswa) {
         setFormData(prev => ({ ...prev, nama: dataSiswa.nama, namaSekolah: dataSiswa.namaSekolah, jenjang: dataSiswa.jenjang }));
         setIsAutoFilled(true);
       } else { setIsAutoFilled(false); }
-    } else { setIsAutoFilled(false); }
-  }, [formData.nisn, selectedService, masterDataKJP]);
+    }
+  };
+
+  // Mencegah form tersubmit jika petugas menekan Enter di kolom NIK/NISN
+  const handleKeyDown = (e, type, value) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); 
+      handleAutoFillCheck(type, value);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -89,17 +107,34 @@ export default function App() {
     return '';
   };
 
+  // LOGIKA LAPORAN BULANAN (DENGAN PENGAMAN DATA KOSONG)
   const monthlySummary = records.reduce((acc, record) => {
-    const monthYear = record.tglKunjungan.substring(0, 7);
-    if (!acc[monthYear]) acc[monthYear] = { lansia: 0, disabilitas: 0, kjp: 0, rombongan: 0, wisman: 0, total: 0 };
-    acc[monthYear][record.layanan] += record.headCount;
-    acc[monthYear].total += record.headCount;
+    // Pengaman 1: Jika tidak ada tglKunjungan di database lama, gunakan tanggal hari ini
+    const tgl = record.tglKunjungan || new Date().toISOString().split('T')[0];
+    const monthYear = tgl.substring(0, 7);
+
+    if (!acc[monthYear]) {
+      acc[monthYear] = { lansia: 0, disabilitas: 0, kjp: 0, rombongan: 0, wisman: 0, total: 0 };
+    }
+    
+    // Pengaman 2: Jika headCount kosong, hitung 1
+    const count = record.headCount || 1;
+    
+    // Pastikan layanan dikenali, jika tidak masukkan ke total saja
+    if (acc[monthYear][record.layanan] !== undefined) {
+        acc[monthYear][record.layanan] += count;
+    }
+    acc[monthYear].total += count;
     return acc;
   }, {});
+  
   const sortedMonths = Object.keys(monthlySummary).sort((a, b) => b.localeCompare(a));
-  const formatMonthYear = (yyyyMm) => {
-    const [year, month] = yyyMm.split('-');
-    const date = new Date(year, month - 1);
+  
+  // FIXED: Mengganti variabel menjadi 'monthStr' agar tidak terjadi ReferenceError
+  const formatMonthYear = (monthStr) => {
+    if (!monthStr || !monthStr.includes('-')) return monthStr || '-';
+    const [year, month] = monthStr.split('-');
+    const date = new Date(year, parseInt(month) - 1);
     return date.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
   };
 
@@ -109,9 +144,12 @@ export default function App() {
     setIsLoading(true); 
     
     let newRecord = {
-      layanan: selectedService, tglKunjungan: formData.tglKunjungan,
-      timestamp: new Date().toISOString(), timestampTampil: new Date().toLocaleString('id-ID'),
-      details: {}, headCount: 1 
+      layanan: selectedService, 
+      tglKunjungan: formData.tglKunjungan,
+      timestamp: new Date().toISOString(), 
+      timestampTampil: new Date().toLocaleString('id-ID'),
+      details: {}, 
+      headCount: 1 
     };
 
     try {
@@ -147,7 +185,8 @@ export default function App() {
         setIsAutoFilled(false);
         setShowToast(true); setTimeout(() => setShowToast(false), 3000);
     } catch (error) {
-        console.error(error); alert("Gagal menyimpan data! Pastikan Firestore dalam mode Test.");
+        console.error(error); 
+        alert("Gagal menyimpan data! Pastikan Firebase dalam mode Test atau periksa koneksi internet.");
     } finally {
         setIsLoading(false);
     }
@@ -182,12 +221,13 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {showToast && (<div className="fixed top-20 right-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 z-50 animate-bounce"><CheckCircle className="text-emerald-500" size={20} /><span className="font-medium">Data berhasil disimpan ke Firebase!</span></div>)}
 
+        {/* --- MENU LAPORAN / DASHBOARD --- */}
         {activeMenu === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col"><span className="text-slate-500 text-sm font-medium mb-1">Total Pengunjung</span><span className="text-3xl font-bold text-slate-800 flex items-end space-x-2"><span>{records.reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-slate-400 mb-1">Orang</span></span></div>
-              <div className="bg-blue-50 p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col"><span className="text-blue-600 text-sm font-medium mb-1">Total Rombongan</span><span className="text-3xl font-bold text-blue-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'rombongan').reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-blue-600 mb-1">Siswa</span></span></div>
-              <div className="bg-emerald-50 p-6 rounded-2xl shadow-sm border border-emerald-100 flex flex-col"><span className="text-emerald-600 text-sm font-medium mb-1">Wisatawan Asing</span><span className="text-3xl font-bold text-emerald-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'wisman').reduce((acc, curr) => acc + curr.headCount, 0)}</span><span className="text-sm font-normal text-emerald-600 mb-1">Orang</span></span></div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col"><span className="text-slate-500 text-sm font-medium mb-1">Total Pengunjung</span><span className="text-3xl font-bold text-slate-800 flex items-end space-x-2"><span>{records.reduce((acc, curr) => acc + (curr.headCount || 1), 0)}</span><span className="text-sm font-normal text-slate-400 mb-1">Orang</span></span></div>
+              <div className="bg-blue-50 p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col"><span className="text-blue-600 text-sm font-medium mb-1">Total Rombongan</span><span className="text-3xl font-bold text-blue-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'rombongan').reduce((acc, curr) => acc + (curr.headCount || 1), 0)}</span><span className="text-sm font-normal text-blue-600 mb-1">Siswa</span></span></div>
+              <div className="bg-emerald-50 p-6 rounded-2xl shadow-sm border border-emerald-100 flex flex-col"><span className="text-emerald-600 text-sm font-medium mb-1">Wisatawan Asing</span><span className="text-3xl font-bold text-emerald-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'wisman').reduce((acc, curr) => acc + (curr.headCount || 1), 0)}</span><span className="text-sm font-normal text-emerald-600 mb-1">Orang</span></span></div>
               <div className="bg-amber-50 p-6 rounded-2xl shadow-sm border border-amber-100 flex flex-col"><span className="text-amber-600 text-sm font-medium mb-1">Layanan Prioritas</span><span className="text-3xl font-bold text-amber-800 flex items-end space-x-2"><span>{records.filter(r => ['lansia', 'disabilitas', 'kjp'].includes(r.layanan)).length}</span><span className="text-sm font-normal text-amber-600 mb-1">Pemohon</span></span></div>
             </div>
 
@@ -196,16 +236,17 @@ export default function App() {
                   <h3 className="text-lg font-semibold text-slate-800 flex items-center"><Activity size={18} className="mr-2 text-blue-600"/> Laporan Detail</h3>
                   <div className="flex items-center space-x-2"><Filter size={16} className="text-slate-400" /><select value={reportFilter} onChange={(e) => setReportFilter(e.target.value)} className="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg p-2 outline-none"><option value="all">Semua Kategori</option><option value="lansia">Lansia</option><option value="disabilitas">SLB / Disabilitas</option><option value="kjp">KJP</option><option value="rombongan">Rombongan Sekolah</option><option value="wisman">Wisatawan Asing</option></select></div>
                 </div>
-                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Tanggal</th><th className="px-6 py-3">Kategori</th><th className="px-6 py-3">Detail Layanan</th><th className="px-6 py-3 text-center">Jml Pengunjung</th></tr></thead><tbody>{records.filter(r => reportFilter === 'all' || r.layanan === reportFilter).map(record => (<tr key={record.id} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 whitespace-nowrap">{record.tglKunjungan}</td><td className="px-6 py-4 uppercase font-medium text-slate-700"><span className={`px-2 py-1 rounded-md text-xs font-bold ${record.layanan === 'lansia' ? 'bg-purple-100 text-purple-700' : record.layanan === 'disabilitas' ? 'bg-red-100 text-red-700' : record.layanan === 'kjp' ? 'bg-yellow-100 text-yellow-700' : record.layanan === 'rombongan' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{record.layanan}</span></td><td className="px-6 py-4 text-slate-800">{record.layanan === 'lansia' && `${record.details.Nama} (NIK: ${record.details.NIK})`}{record.layanan === 'disabilitas' && `${record.details['Nama/Instansi']} (${record.details.Jenis})`}{record.layanan === 'kjp' && `${record.details.Nama} - ${record.details['Asal Sekolah/PT']}`}{record.layanan === 'rombongan' && (<div><span className="font-medium">{record.details['Nama Sekolah']}</span> ({record.details.Jenjang})<div className="text-xs text-slate-500 mt-1">Diskon: <span className={record.details['Potongan Harga'] === 'Ya' ? 'text-emerald-600 font-bold' : ''}>{record.details['Potongan Harga']}</span></div></div>)}{record.layanan === 'wisman' && `${record.details['Asal Negara']} (${record.details.Kategori})`}</td><td className="px-6 py-4 text-center font-bold text-slate-800">{record.headCount} <span className="text-xs font-normal text-slate-400">org</span></td></tr>))}</tbody></table></div>
+                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Tanggal</th><th className="px-6 py-3">Kategori</th><th className="px-6 py-3">Detail Layanan</th><th className="px-6 py-3 text-center">Jml Pengunjung</th></tr></thead><tbody>{records.filter(r => reportFilter === 'all' || r.layanan === reportFilter).map(record => (<tr key={record.id} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 whitespace-nowrap">{record.tglKunjungan || '-'}</td><td className="px-6 py-4 uppercase font-medium text-slate-700"><span className={`px-2 py-1 rounded-md text-xs font-bold ${record.layanan === 'lansia' ? 'bg-purple-100 text-purple-700' : record.layanan === 'disabilitas' ? 'bg-red-100 text-red-700' : record.layanan === 'kjp' ? 'bg-yellow-100 text-yellow-700' : record.layanan === 'rombongan' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{record.layanan}</span></td><td className="px-6 py-4 text-slate-800">{record.layanan === 'lansia' && record.details && `${record.details.Nama} (NIK: ${record.details.NIK})`}{record.layanan === 'disabilitas' && record.details && `${record.details['Nama/Instansi']} (${record.details.Jenis})`}{record.layanan === 'kjp' && record.details && `${record.details.Nama} - ${record.details['Asal Sekolah/PT']}`}{record.layanan === 'rombongan' && record.details && (<div><span className="font-medium">{record.details['Nama Sekolah']}</span> ({record.details.Jenjang})<div className="text-xs text-slate-500 mt-1">Diskon: <span className={record.details['Potongan Harga'] === 'Ya' ? 'text-emerald-600 font-bold' : ''}>{record.details['Potongan Harga']}</span></div></div>)}{record.layanan === 'wisman' && record.details && `${record.details['Asal Negara']} (${record.details.Kategori})`}</td><td className="px-6 py-4 text-center font-bold text-slate-800">{record.headCount || 1} <span className="text-xs font-normal text-slate-400">org</span></td></tr>))}</tbody></table></div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-6">
                 <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center"><h3 className="text-lg font-semibold text-slate-800 flex items-center"><Calendar size={18} className="mr-2 text-blue-600"/> Rekap Bulanan</h3></div>
-                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Bulan & Tahun</th><th className="px-6 py-3 text-center">Lansia</th><th className="px-6 py-3 text-center">SLB/Disabilitas</th><th className="px-6 py-3 text-center">KJP</th><th className="px-6 py-3 text-center">Rombongan</th><th className="px-6 py-3 text-center">Wisman</th><th className="px-6 py-3 text-center bg-blue-50 font-bold text-blue-800">TOTAL</th></tr></thead><tbody>{sortedMonths.map(month => (<tr key={month} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-800 whitespace-nowrap">{formatMonthYear(month)}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].lansia}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].disabilitas}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].kjp}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].rombongan}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].wisman}</td><td className="px-6 py-4 text-center font-bold text-blue-700 bg-blue-50/30">{monthlySummary[month].total}</td></tr>))}</tbody></table></div>
+                <div className="p-0 overflow-x-auto"><table className="w-full text-sm text-left text-slate-500"><thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-3">Bulan & Tahun</th><th className="px-6 py-3 text-center">Lansia</th><th className="px-6 py-3 text-center">SLB/Disabilitas</th><th className="px-6 py-3 text-center">KJP</th><th className="px-6 py-3 text-center">Rombongan</th><th className="px-6 py-3 text-center">Wisman</th><th className="px-6 py-3 text-center bg-blue-50 font-bold text-blue-800">TOTAL</th></tr></thead><tbody>{sortedMonths.map(month => (<tr key={month} className="bg-white border-b border-slate-100 hover:bg-slate-50"><td className="px-6 py-4 font-medium text-slate-800 whitespace-nowrap">{formatMonthYear(month)}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].lansia || 0}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].disabilitas || 0}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].kjp || 0}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].rombongan || 0}</td><td className="px-6 py-4 text-center text-slate-600">{monthlySummary[month].wisman || 0}</td><td className="px-6 py-4 text-center font-bold text-blue-700 bg-blue-50/30">{monthlySummary[month].total}</td></tr>))}</tbody></table></div>
             </div>
           </div>
         )}
 
+        {/* --- MENU INPUT FORM --- */}
         {activeMenu === 'form' && (
           <div className="space-y-6">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -231,8 +272,11 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
                   {selectedService === 'lansia' && (<>
-                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik 16 digit NIK. Data lama akan terisi otomatis.</p></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">NIK KTP</label><input type="number" name="nik" required value={formData.nik} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} /></div>
+                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik NIK lalu tekan Tab/Enter. Data lama akan terisi otomatis.</p></div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">NIK KTP</label>
+                      <input type="number" name="nik" required value={formData.nik} onChange={handleInputChange} onBlur={() => handleAutoFillCheck('lansia', formData.nik)} onKeyDown={(e) => handleKeyDown(e, 'lansia', formData.nik)} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} placeholder="Ketik NIK..." />
+                    </div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Nama Lengkap</label><input type="text" name="nama" required value={formData.nama} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Tempat Lahir</label><input type="text" name="tempatLahir" required value={formData.tempatLahir} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Tgl Lahir</label><input type="date" name="tglLahir" required value={formData.tglLahir} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
@@ -240,15 +284,18 @@ export default function App() {
                   </>)}
 
                   {selectedService === 'disabilitas' && (<>
-                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Jenis</label><div className="flex space-x-4"><label><input type="radio" name="jenisDisabilitas" value="Pribadi" checked={formData.jenisDisabilitas === 'Pribadi'} onChange={handleInputChange} className="mr-2"/>Pribadi</label><label><input type="radio" name="jenisDisabilitas" value="Rombongan" checked={formData.jenisDisabilitas === 'Rombongan'} onChange={handleInputChange} className="mr-2"/>Rombongan</label></div></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Jenis</label><div className="flex space-x-4"><label className="flex items-center cursor-pointer"><input type="radio" name="jenisDisabilitas" value="Pribadi" checked={formData.jenisDisabilitas === 'Pribadi'} onChange={handleInputChange} className="mr-2 w-4 h-4 text-blue-600 focus:ring-blue-500"/>Pribadi</label><label className="flex items-center cursor-pointer"><input type="radio" name="jenisDisabilitas" value="Rombongan" checked={formData.jenisDisabilitas === 'Rombongan'} onChange={handleInputChange} className="mr-2 w-4 h-4 text-blue-600 focus:ring-blue-500"/>Rombongan</label></div></div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">{formData.jenisDisabilitas === 'Pribadi' ? 'Nama' : 'Nama Instansi'}</label><input type="text" name="namaInstansi" required value={formData.namaInstansi} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
                     {formData.jenisDisabilitas === 'Rombongan' && (<div><label className="block text-sm font-medium text-slate-700 mb-1">No Surat</label><input type="text" name="noSurat" required value={formData.noSurat} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>)}
                     <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Alamat</label><textarea name="alamat" required value={formData.alamat} onChange={handleInputChange} rows="2" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none"></textarea></div>
                   </>)}
 
                   {selectedService === 'kjp' && (<>
-                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik NISN, data lama akan terisi otomatis.</p></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">NISN</label><input type="number" name="nisn" required value={formData.nisn} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} /></div>
+                    <div className="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-2"><p className="text-sm text-blue-800">Ketik NISN lalu tekan Tab/Enter. Data lama akan terisi otomatis.</p></div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">NISN</label>
+                      <input type="number" name="nisn" required value={formData.nisn} onChange={handleInputChange} onBlur={() => handleAutoFillCheck('kjp', formData.nisn)} onKeyDown={(e) => handleKeyDown(e, 'kjp', formData.nisn)} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'}`} placeholder="Ketik NISN..." />
+                    </div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Nama Siswa</label><input type="text" name="nama" required value={formData.nama} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
                     <div><label className="block text-sm font-medium text-slate-700 mb-1">Asal Sekolah</label><input type="text" name="namaSekolah" required value={formData.namaSekolah} onChange={handleInputChange} className={`w-full px-4 py-2 border rounded-lg focus:ring-blue-500 outline-none ${isAutoFilled ? 'bg-amber-50/50 border-amber-200' : 'border-slate-300'}`} /></div>
                     <div className="grid grid-cols-2 gap-4">
@@ -258,16 +305,16 @@ export default function App() {
                   </>)}
 
                   {selectedService === 'rombongan' && (<>
-                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nama Sekolah</label><input type="text" name="namaSekolah" required value={formData.namaSekolah} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jenjang</label><select name="jenjang" value={formData.jenjang} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white"><option value="TK/KB">TK/KB</option><option value="SD">SD</option><option value="SMP">SMP</option><option value="SMA">SMA</option><option value="Perguruan Tinggi">Perguruan Tinggi</option></select></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah Murid</label><input type="number" name="jumlahMurid" required value={formData.jumlahMurid} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
-                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Dapat Diskon?</label><div className="flex space-x-6"><label className="flex items-center space-x-2 bg-slate-50 px-4 py-2 border rounded-lg"><input type="radio" name="diskonRombongan" value="Tidak" checked={formData.diskonRombongan === 'Tidak'} onChange={handleInputChange} className="mr-2"/>Tidak Ada</label><label className="flex items-center space-x-2 bg-emerald-50 px-4 py-2 border border-emerald-200 rounded-lg"><input type="radio" name="diskonRombongan" value="Ya" checked={formData.diskonRombongan === 'Ya'} onChange={handleInputChange} className="mr-2"/>Ya, Diskon</label></div></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nama Sekolah</label><input type="text" name="namaSekolah" required value={formData.namaSekolah} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jenjang</label><select name="jenjang" value={formData.jenjang} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none bg-white"><option value="TK/KB">TK/KB</option><option value="SD">SD</option><option value="SMP">SMP</option><option value="SMA">SMA</option><option value="Perguruan Tinggi">Perguruan Tinggi</option></select></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah Murid</label><input type="number" name="jumlahMurid" required value={formData.jumlahMurid} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">Dapat Diskon?</label><div className="flex space-x-6"><label className="flex items-center space-x-2 bg-slate-50 px-4 py-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="diskonRombongan" value="Tidak" checked={formData.diskonRombongan === 'Tidak'} onChange={handleInputChange} className="w-4 h-4 text-blue-600 focus:ring-blue-500"/><span className="text-slate-700">Tidak Ada</span></label><label className="flex items-center space-x-2 bg-emerald-50 px-4 py-2 border border-emerald-200 rounded-lg cursor-pointer"><input type="radio" name="diskonRombongan" value="Ya" checked={formData.diskonRombongan === 'Ya'} onChange={handleInputChange} className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"/><span className="text-emerald-800 font-medium">Ya, Diskon</span></label></div></div>
                   </>)}
 
                   {selectedService === 'wisman' && (<>
-                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Asal Negara</label><input type="text" name="asalNegara" required value={formData.asalNegara} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label><select name="kategoriUmur" value={formData.kategoriUmur} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white"><option value="Dewasa">Dewasa</option><option value="Anak">Anak</option></select></div>
-                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah</label><input type="number" min="1" name="jumlahWisman" required value={formData.jumlahWisman} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" /></div>
+                    <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Asal Negara</label><input type="text" name="asalNegara" required value={formData.asalNegara} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label><select name="kategoriUmur" value={formData.kategoriUmur} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none bg-white"><option value="Dewasa">Dewasa</option><option value="Anak">Anak</option></select></div>
+                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Jumlah</label><input type="number" min="1" name="jumlahWisman" required value={formData.jumlahWisman} onChange={handleInputChange} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-blue-500 outline-none" /></div>
                   </>)}
                 </div>
                 <div className="pt-6 border-t border-slate-100 flex justify-end"><button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-xl flex items-center space-x-2 disabled:bg-blue-300"><Save size={18} /><span>{isLoading ? 'Menyimpan...' : 'Simpan ke Cloud'}</span></button></div>
@@ -276,19 +323,24 @@ export default function App() {
           </div>
         )}
 
+        {/* --- MENU DATA TERSIMPAN --- */}
         {activeMenu === 'data' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center"><h3 className="text-lg font-semibold text-slate-800">Database Firebase</h3><span className="text-sm text-emerald-600 flex items-center space-x-1 font-medium"><Cloud size={14} /> <span>Live Sinkronisasi</span></span></div>
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {records.map((record) => (
-                  <div key={record.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-3"><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md uppercase">{record.layanan}</span><span className="text-xs text-slate-400">{record.tglKunjungan}</span></div>
-                    <div className="space-y-2 text-sm">{Object.entries(record.details).map(([key, value]) => (<div key={key} className="flex flex-col"><span className="text-slate-500 text-xs">{key}</span><span className="font-medium">{value || '-'}</span></div>))}</div>
-                    <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] text-slate-400 text-right">{record.timestampTampil}</div>
-                  </div>
-                ))}
-              </div>
+              {records.length === 0 ? (
+                 <div className="text-center py-12 text-slate-400">Belum ada data di Firebase.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {records.map((record) => (
+                    <div key={record.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-3"><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md uppercase">{record.layanan}</span><span className="text-xs text-slate-400">{record.tglKunjungan || '-'}</span></div>
+                      <div className="space-y-2 text-sm">{record.details && Object.entries(record.details).map(([key, value]) => (<div key={key} className="flex flex-col"><span className="text-slate-500 text-xs">{key}</span><span className="font-medium">{typeof value === 'object' ? JSON.stringify(value) : (value || '-')}</span></div>))}</div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] text-slate-400 text-right">{record.timestampTampil || 'Baru Saja'}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
