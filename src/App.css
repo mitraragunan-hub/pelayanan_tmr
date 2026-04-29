@@ -56,8 +56,11 @@ export default function App() {
     asalNegara: '', kategoriUmur: 'Dewasa', jumlahWisman: '1'
   });
 
-  // --- EFEK: CEK STATUS LOGIN ---
+  // --- EFEK: CEK STATUS LOGIN & UBAH JUDUL TAB ---
   useEffect(() => {
+    // Otomatis mengubah teks "Vite App" di tab browser
+    document.title = "pelayanan-tmr";
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setIsCheckingAuth(false);
