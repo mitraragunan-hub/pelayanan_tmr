@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
   Users, UserPlus, GraduationCap, BookOpen, Globe, 
   ClipboardList, PlusCircle, Save, CheckCircle, Clock, Zap,
-  BarChart2, Activity, Filter, Calendar, Cloud, Edit2, Trash2, AlertTriangle, X
+  BarChart2, Activity, Filter, Calendar, Cloud, Edit2, Trash2, AlertTriangle, 
+  Lock, Mail, LogOut
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -18,13 +20,22 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app); // Inisialisasi Firebase Auth
 
 export default function App() {
+  // --- STATE OTENTIKASI (LOGIN) ---
+  const [user, setUser] = useState(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // --- STATE APLIKASI UTAMA ---
   const [activeMenu, setActiveMenu] = useState('form'); 
   const [selectedService, setSelectedService] = useState('lansia');
   const [reportFilter, setReportFilter] = useState('all');
   
-  // State tersambung ke Firebase
   const [records, setRecords] = useState([]);
   const [masterDataLansia, setMasterDataLansia] = useState({});
   const [masterDataKJP, setMasterDataKJP] = useState({});
@@ -33,7 +44,6 @@ export default function App() {
   const [isAutoFilled, setIsAutoFilled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // State untuk fitur Edit & Delete
   const [editId, setEditId] = useState(null);
   const [recordToDelete, setRecordToDelete] = useState(null);
 
@@ -45,6 +55,42 @@ export default function App() {
     jumlahMurid: '', diskonRombongan: 'Tidak',
     asalNegara: '', kategoriUmur: 'Dewasa', jumlahWisman: '1'
   });
+
+  // --- EFEK: CEK STATUS LOGIN ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsCheckingAuth(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- FUNGSI LOGIN & LOGOUT ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setAuthError('');
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+    } catch (error) {
+      console.error(error);
+      setAuthError('Email atau password salah. Silakan coba lagi.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      // Reset state saat logout
+      setRecords([]);
+      setMasterDataLansia({});
+      setMasterDataKJP({});
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   const showNotification = (msg) => {
     setToastMsg(msg);
@@ -64,8 +110,11 @@ export default function App() {
     setIsAutoFilled(false);
   };
 
-  // MENGAMBIL DATA DARI FIREBASE SECARA REALTIME
+  // --- MENGAMBIL DATA DARI FIREBASE SECARA REALTIME ---
+  // Hanya ambil data JIKA user sudah login
   useEffect(() => {
+    if (!user) return; // Mencegah fetch data jika belum login
+
     const q = query(collection(db, 'kunjungan'), orderBy('timestamp', 'desc'));
     const unsubKunjungan = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -83,10 +132,10 @@ export default function App() {
     });
 
     return () => { unsubKunjungan(); unsubLansia(); unsubKJP(); };
-  }, []);
+  }, [user]);
 
   const handleAutoFillCheck = (type, value) => {
-    if (editId) return; // Jangan autofill jika sedang dalam mode edit
+    if (editId) return; 
     if (type === 'lansia' && value) {
       const dataPenduduk = masterDataLansia[value];
       if (dataPenduduk) {
@@ -118,7 +167,6 @@ export default function App() {
     return '';
   };
 
-  // AKSI EDIT & HAPUS
   const handleEditAction = (record) => {
     const details = record.details || {};
     let newFormData = { ...formData, tglKunjungan: record.tglKunjungan || new Date().toISOString().split('T')[0] };
@@ -155,7 +203,6 @@ export default function App() {
     }
   };
 
-  // LOGIKA LAPORAN BULANAN
   const monthlySummary = records.reduce((acc, record) => {
     const tgl = record.tglKunjungan || new Date().toISOString().split('T')[0];
     const monthYear = tgl.substring(0, 7);
@@ -174,7 +221,6 @@ export default function App() {
     return date.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
   };
 
-  // FUNGSI SIMPAN/UPDATE KE FIREBASE
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true); 
@@ -182,7 +228,6 @@ export default function App() {
     let newRecord = {
       layanan: selectedService, 
       tglKunjungan: formData.tglKunjungan,
-      // Jangan update timestamp asli jika sedang edit, agar urutan data tidak berubah berantakan
       timestamp: editId ? records.find(r => r.id === editId)?.timestamp || new Date().toISOString() : new Date().toISOString(), 
       timestampTampil: new Date().toLocaleString('id-ID') + (editId ? ' (Diedit)' : ''),
       details: {}, 
@@ -240,10 +285,96 @@ export default function App() {
     </button>
   );
 
+  // --- TAMPILAN LOADING AWAL ---
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-blue-600 flex flex-col items-center">
+           <Cloud className="animate-bounce mb-2" size={32} />
+           <p className="font-medium text-slate-500">Memeriksa Akses...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- TAMPILAN HALAMAN LOGIN (Jika belum login) ---
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="bg-white max-w-md w-full rounded-3xl shadow-xl overflow-hidden border border-slate-200">
+          <div className="bg-blue-600 p-8 text-center">
+            <div className="bg-white/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+              <Lock className="text-white" size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-white">Layanan Terpadu</h2>
+            <p className="text-blue-100 text-sm mt-2">Portal Pendataan Pengunjung</p>
+          </div>
+          
+          <div className="p-8">
+            <h3 className="text-lg font-semibold text-slate-800 mb-6 text-center">Login Petugas</h3>
+            
+            {authError && (
+              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 flex items-center border border-red-100">
+                <AlertTriangle size={16} className="mr-2 flex-shrink-0" /> {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email Akses</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail size={18} className="text-slate-400" />
+                  </div>
+                  <input 
+                    type="email" 
+                    required 
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                    placeholder="admin@layanan.com" 
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Kata Sandi</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock size={18} className="text-slate-400" />
+                  </div>
+                  <input 
+                    type="password" 
+                    required 
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                    placeholder="••••••••" 
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-70 mt-4 flex items-center justify-center shadow-md shadow-blue-200"
+              >
+                {isLoggingIn ? 'Memproses...' : 'Masuk ke Sistem'}
+              </button>
+            </form>
+          </div>
+          <div className="bg-slate-50 p-4 text-center border-t border-slate-100 text-xs text-slate-500">
+            Akses terbatas. Pastikan akun terdaftar di Firebase Console.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- TAMPILAN UTAMA APLIKASI (Jika sudah login) ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
       
-      {/* Modal Konfirmasi Hapus */}
       {recordToDelete && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 px-4 transition-opacity">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full animate-in fade-in zoom-in duration-200">
@@ -262,15 +393,22 @@ export default function App() {
 
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+          <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
               <div className="bg-blue-600 p-2 rounded-lg"><ClipboardList className="h-6 w-6 text-white" /></div>
-              <span className="text-xl font-bold text-slate-800">Layanan<span className="text-blue-600">Terpadu</span></span>
+              <span className="text-xl font-bold text-slate-800 hidden sm:block">Layanan<span className="text-blue-600">Terpadu</span></span>
             </div>
-            <div className="flex items-center space-x-4">
-              <button onClick={() => {setActiveMenu('form'); if(!editId) resetForm();}} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'form' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><PlusCircle size={18} /> <span className="hidden sm:inline">Input Data</span></button>
-              <button onClick={() => setActiveMenu('dashboard')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><BarChart2 size={18} /> <span className="hidden sm:inline">Laporan</span></button>
-              <button onClick={() => setActiveMenu('data')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'data' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><ClipboardList size={18} /> <span className="hidden sm:inline">Data</span>{records.length > 0 && (<span className="ml-2 bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs font-bold">{records.length}</span>)}</button>
+            
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <button onClick={() => {setActiveMenu('form'); if(!editId) resetForm();}} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'form' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><PlusCircle size={18} /> <span className="hidden md:inline">Input</span></button>
+              <button onClick={() => setActiveMenu('dashboard')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><BarChart2 size={18} /> <span className="hidden md:inline">Laporan</span></button>
+              <button onClick={() => setActiveMenu('data')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'data' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><ClipboardList size={18} /> <span className="hidden md:inline">Data</span>{records.length > 0 && (<span className="ml-1 md:ml-2 bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs font-bold">{records.length}</span>)}</button>
+              
+              {/* Tombol Logout */}
+              <div className="h-6 border-l border-slate-300 mx-1"></div>
+              <button onClick={handleLogout} className="flex items-center space-x-1 px-3 py-2 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors font-medium">
+                <LogOut size={18} /> <span className="hidden md:inline">Keluar</span>
+              </button>
             </div>
           </div>
         </div>
@@ -281,7 +419,7 @@ export default function App() {
 
         {/* --- MENU LAPORAN / DASHBOARD --- */}
         {activeMenu === 'dashboard' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col"><span className="text-slate-500 text-sm font-medium mb-1">Total Pengunjung</span><span className="text-3xl font-bold text-slate-800 flex items-end space-x-2"><span>{records.reduce((acc, curr) => acc + (curr.headCount || 1), 0)}</span><span className="text-sm font-normal text-slate-400 mb-1">Orang</span></span></div>
               <div className="bg-blue-50 p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col"><span className="text-blue-600 text-sm font-medium mb-1">Total Rombongan</span><span className="text-3xl font-bold text-blue-800 flex items-end space-x-2"><span>{records.filter(r => r.layanan === 'rombongan').reduce((acc, curr) => acc + (curr.headCount || 1), 0)}</span><span className="text-sm font-normal text-blue-600 mb-1">Siswa</span></span></div>
@@ -306,7 +444,7 @@ export default function App() {
 
         {/* --- MENU INPUT FORM --- */}
         {activeMenu === 'form' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 relative">
               <h2 className="text-lg font-semibold text-slate-800 mb-4 px-2">Kategori Layanan</h2>
               {editId && <div className="absolute top-4 right-4 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold flex items-center"><Edit2 size={12} className="mr-1"/> MODE EDIT AKTIF</div>}
@@ -398,7 +536,7 @@ export default function App() {
 
         {/* --- MENU DATA TERSIMPAN --- */}
         {activeMenu === 'data' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center"><h3 className="text-lg font-semibold text-slate-800">Database Kunjungan</h3><span className="text-sm text-emerald-600 flex items-center space-x-1 font-medium"><Cloud size={14} /> <span>Live Sinkronisasi</span></span></div>
             <div className="p-6">
               {records.length === 0 ? (
@@ -406,7 +544,7 @@ export default function App() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {records.map((record) => (
-                    <div key={record.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow relative group">
+                    <div key={record.id} className="border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow relative group bg-white">
                       <div className="flex justify-between items-start mb-3">
                         <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md uppercase">{record.layanan}</span>
                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{record.tglKunjungan || '-'}</span>
