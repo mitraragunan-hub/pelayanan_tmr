@@ -303,7 +303,7 @@ export default function App() {
               <span className="text-xl font-bold text-slate-800 hidden lg:block">Layanan<span className="text-blue-600">Terpadu</span></span>
             </div>
             <div className="flex items-center space-x-1 sm:space-x-2 overflow-x-auto">
-              <button onClick={() => setActiveMenu('dashboard')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-100'}`}><BarChart2 size={18} /> <span className="hidden md:inline">Laporan</span></button>
+              <button onClick={() => setActiveMenu('dashboard')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-100'}`}><BarChart2 size={18} /> <span className="hidden md:inline">Dashboard</span></button>
               <button onClick={() => {setActiveMenu('form'); if(!editId) resetForm();}} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'form' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-100'}`}><PlusCircle size={18} /> <span className="hidden md:inline">Input</span></button>
               <button onClick={() => setActiveMenu('data')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'data' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-100'}`}><Cloud size={18} /> <span className="hidden md:inline">Live</span></button>
               <button onClick={() => setActiveMenu('print')} className={`flex items-center space-x-1 px-3 py-2 rounded-lg font-medium transition-colors ${activeMenu === 'print' ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-100'}`}><Printer size={18} /> <span className="hidden md:inline">Cetak</span></button>
@@ -320,33 +320,10 @@ export default function App() {
         {/* --- MENU DASHBOARD --- */}
         {activeMenu === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-300 print:hidden">
-            <div className="bg-gradient-to-r from-blue-700 to-blue-900 rounded-2xl shadow-lg border border-blue-800 overflow-hidden text-white relative">
-                <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><BarChart2 size={120} /></div>
-                <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between relative z-10">
-                    <div>
-                        <h3 className="text-xl font-bold flex items-center"><FileText size={20} className="mr-2 text-blue-300"/> Rekapitulasi Data Resmi (Januari - April 2026)</h3>
-                        <p className="text-blue-200 text-sm mt-1">Data historis arsip Excel Unit Pengelola TMR.</p>
-                    </div>
-                </div>
-                <div className="p-0 overflow-x-auto relative z-10">
-                    <table className="w-full text-sm text-left text-blue-100">
-                        <thead className="text-xs uppercase bg-white/10 border-b border-white/20">
-                            <tr><th className="px-6 py-4 font-bold text-white">Bulan</th><th className="px-6 py-4 text-center">Lansia</th><th className="px-6 py-4 text-center">Disabilitas/SLB</th><th className="px-6 py-4 text-center">KJP</th><th className="px-6 py-4 text-center">Rombongan</th><th className="px-6 py-4 text-center">Wisman</th><th className="px-6 py-4 text-center font-bold text-white">TOTAL</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/10">
-                            <tr className="hover:bg-white/5"><td className="px-6 py-3 font-medium text-white">Januari</td><td className="px-6 py-3 text-center">180</td><td className="px-6 py-3 text-center">28</td><td className="px-6 py-3 text-center">23</td><td className="px-6 py-3 text-center">3.191</td><td className="px-6 py-3 text-center">58</td><td className="px-6 py-3 text-center font-bold text-white">3.480</td></tr>
-                            <tr className="hover:bg-white/5"><td className="px-6 py-3 font-medium text-white">Februari</td><td className="px-6 py-3 text-center">102</td><td className="px-6 py-3 text-center">143</td><td className="px-6 py-3 text-center">37</td><td className="px-6 py-3 text-center">2.999</td><td className="px-6 py-3 text-center">250</td><td className="px-6 py-3 text-center font-bold text-white">3.531</td></tr>
-                            <tr className="hover:bg-white/5"><td className="px-6 py-3 font-medium text-white">Maret</td><td className="px-6 py-3 text-center">72</td><td className="px-6 py-3 text-center">0</td><td className="px-6 py-3 text-center">36</td><td className="px-6 py-3 text-center">219</td><td className="px-6 py-3 text-center">273</td><td className="px-6 py-3 text-center font-bold text-white">600</td></tr>
-                            <tr className="hover:bg-white/5"><td className="px-6 py-3 font-medium text-white">April</td><td className="px-6 py-3 text-center">254</td><td className="px-6 py-3 text-center">62</td><td className="px-6 py-3 text-center">66</td><td className="px-6 py-3 text-center">1.865</td><td className="px-6 py-3 text-center">236</td><td className="px-6 py-3 text-center font-bold text-white">2.483</td></tr>
-                            <tr className="bg-white/10 font-bold text-white"><td className="px-6 py-4">GRAND TOTAL</td><td className="px-6 py-4 text-center text-blue-200">608</td><td className="px-6 py-4 text-center text-blue-200">233</td><td className="px-6 py-4 text-center text-blue-200">162</td><td className="px-6 py-4 text-center text-blue-200">8.274</td><td className="px-6 py-4 text-center text-blue-200">817</td><td className="px-6 py-4 text-center text-yellow-300 text-lg">10.094</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col md:flex-row justify-between md:items-center gap-4">
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center"><Activity size={18} className="mr-2 text-emerald-600"/> Data Input Live (Belum Direkap)</h3>
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center"><Activity size={18} className="mr-2 text-blue-600"/> Data Input Live (Monitoring Dashboard)</h3>
                   <div className="flex items-center space-x-2"><Filter size={16} className="text-slate-400" /><select value={reportFilter} onChange={(e) => setReportFilter(e.target.value)} className="bg-white border border-slate-300 text-sm rounded-lg p-2 outline-none"><option value="all">Semua Kategori</option><option value="lansia">Lansia</option><option value="disabilitas">SLB / Disabilitas</option><option value="kjp">KJP</option><option value="rombongan">Rombongan Sekolah</option><option value="wisman">Wisatawan Asing</option></select></div>
                 </div>
                 <div className="p-0 overflow-x-auto">
@@ -533,25 +510,26 @@ export default function App() {
             </div>
 
             {/* --- KERTAS LAPORAN CETAK --- */}
-            <div className="bg-white p-8 md:p-12 border border-slate-200 shadow-lg min-h-[297mm] print:shadow-none print:border-none print:p-0 print:m-0 w-full text-black" style={{fontFamily: "'Times New Roman', Times, serif"}}>
+            {/* Font diubah menjadi Arial dan Size menjadi 12pt */}
+            <div className="bg-white p-8 md:p-12 border border-slate-200 shadow-lg min-h-[297mm] print:shadow-none print:border-none print:p-0 print:m-0 w-full text-black" style={{fontFamily: "Arial, sans-serif", fontSize: "12pt"}}>
                 
                 {/* Header Laporan */}
                 <div className="mb-6 border-b-2 border-black pb-4">
-                    <h1 className="text-center font-bold text-lg uppercase tracking-wide">
+                    <h1 className="text-center font-bold text-[14pt] uppercase tracking-wide">
                         {printService === 'lansia' && 'DATA LAYANAN GRATIS BAGI LANJUT USIA'}
                         {printService === 'disabilitas' && 'DATA LAYANAN GRATIS BAGI PENYANDANG DISABILITAS'}
                         {printService === 'kjp' && 'DATA LAYANAN GRATIS BAGI PESERTA DIDIK KARTU JAKARTA PINTAR'}
                         {printService === 'rombongan' && 'DATA KUNJUNGAN ROMBONGAN SEKOLAH'}
                         {printService === 'wisman' && 'DATA KUNJUNGAN WISATAWAN MANCANEGARA'}
                     </h1>
-                    <h2 className="text-center font-bold text-base uppercase">UNIT PENGELOLA TAMAN MARGASATWA RAGUNAN</h2>
-                    <h2 className="text-center font-bold text-base uppercase">DINAS PERTAMANAN DAN HUTAN KOTA PROVINSI DKI JAKARTA</h2>
-                    <h3 className="text-center font-bold text-base uppercase mt-1">BULAN {getBulanName(printMonth)} {printYear}</h3>
+                    <h2 className="text-center font-bold text-[12pt] uppercase mt-2">UNIT PENGELOLA TAMAN MARGASATWA RAGUNAN</h2>
+                    <h2 className="text-center font-bold text-[12pt] uppercase">DINAS PERTAMANAN DAN HUTAN KOTA PROVINSI DKI JAKARTA</h2>
+                    <h3 className="text-center font-bold text-[12pt] uppercase mt-2">BULAN {getBulanName(printMonth)} {printYear}</h3>
                 </div>
 
                 {/* Tabel Laporan */}
                 <div className="w-full mb-8">
-                    <table className="w-full border-collapse border border-black text-sm text-center">
+                    <table className="w-full border-collapse border border-black text-center">
                         <thead>
                             {/* Format Header Lansia */}
                             {printService === 'lansia' && (
@@ -598,10 +576,10 @@ export default function App() {
                                     const hCount = parseInt(item.headCount) || 1;
 
                                     if(printService === 'lansia') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d.Nama||'-'}</td><td className="border border-black p-2">{d.TTL||'-'}</td><td className="border border-black p-2">{d.NIK||'-'}</td><td className="border border-black p-2 text-left text-xs">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
+                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d.Nama||'-'}</td><td className="border border-black p-2">{d.TTL||'-'}</td><td className="border border-black p-2">{d.NIK||'-'}</td><td className="border border-black p-2 text-left">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
                                     }
                                     if(printService === 'disabilitas') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama/Instansi']||'-'}</td><td className="border border-black p-2">{d['No Surat']||'-'}</td><td className="border border-black p-2 text-left text-xs">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
+                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama/Instansi']||'-'}</td><td className="border border-black p-2">{d['No Surat']||'-'}</td><td className="border border-black p-2 text-left">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
                                     }
                                     if(printService === 'kjp') {
                                         return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d.Nama||'-'}</td><td className="border border-black p-2">{d.NISN||'-'}</td><td className="border border-black p-2 text-left">{d['Asal Sekolah/PT']||'-'}</td><td className="border border-black p-2">{d.Kategori==='Dewasa'?hCount:'-'}</td><td className="border border-black p-2">{d.Kategori==='Anak'?hCount:'-'}</td></tr>);
@@ -613,7 +591,7 @@ export default function App() {
                                         const sma = d.Jenjang === 'SMA' ? hCount : '-';
                                         const pt = d.Jenjang === 'Perguruan Tinggi' ? hCount : '-';
                                         const diskon = d['Potongan Harga']==='Ya' ? 'Diskon' : 'Tidak Diskon';
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama Sekolah']||'-'}</td><td className="border border-black p-2">{tk}</td><td className="border border-black p-2">{sd}</td><td className="border border-black p-2">{smp}</td><td className="border border-black p-2">{sma}</td><td className="border border-black p-2">{pt}</td><td className="border border-black p-2 text-xs">{diskon}</td></tr>);
+                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama Sekolah']||'-'}</td><td className="border border-black p-2">{tk}</td><td className="border border-black p-2">{sd}</td><td className="border border-black p-2">{smp}</td><td className="border border-black p-2">{sma}</td><td className="border border-black p-2">{pt}</td><td className="border border-black p-2">{diskon}</td></tr>);
                                     }
                                     if(printService === 'wisman') {
                                         return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Asal Negara']||'-'}</td><td className="border border-black p-2">{d.Kategori==='Dewasa'?hCount:'-'}</td><td className="border border-black p-2">{d.Kategori==='Anak'?hCount:'-'}</td><td className="border border-black p-2 font-bold">{hCount}</td></tr>);
@@ -621,25 +599,23 @@ export default function App() {
                                     return null;
                                 })
                             )}
-                        </tbody>
-                        
-                        {/* Row Total (FOOTER TABEL) */}
-                        {filteredPrintRecords.length > 0 && (
-                            <tfoot>
-                                <tr className="font-bold bg-gray-50 uppercase">
+                            
+                            {/* Row Total diletakkan di dalam tbody agar HANYA MUNCUL DI AKHIR TABEL SAJA (Tidak berulang di setiap halaman print) */}
+                            {filteredPrintRecords.length > 0 && (
+                                <tr className="font-bold bg-gray-50 uppercase print:break-inside-avoid">
                                     {printService === 'lansia' && <><td colSpan="6" className="border border-black p-2 text-right pr-4">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
                                     {printService === 'disabilitas' && <><td colSpan="5" className="border border-black p-2 text-right pr-4">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
                                     {printService === 'kjp' && <><td colSpan="5" className="border border-black p-2 text-right pr-4">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Dewasa').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Anak').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td></>}
                                     {printService === 'rombongan' && <><td colSpan="3" className="border border-black p-2 text-right pr-4">J U M L A H</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='TK/KB').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SD').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SMP').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SMA').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='Perguruan Tinggi').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">-</td></>}
                                     {printService === 'wisman' && <><td colSpan="3" className="border border-black p-2 text-right pr-4">J U M L A H</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Dewasa').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Anak').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
                                 </tr>
-                            </tfoot>
-                        )}
+                            )}
+                        </tbody>
                     </table>
                 </div>
 
                 {/* Kolom Tanda Tangan */}
-                <div className="flex justify-end mt-12 text-center text-sm">
+                <div className="flex justify-end mt-12 text-center text-[12pt] print:break-inside-avoid">
                     <div className="w-80">
                         <p className="mb-1">Jakarta, ....... {getBulanName(printMonth)} {printYear}</p>
                         <p className="mb-1">Kepala Seksi Pelayanan dan Informasi</p>
