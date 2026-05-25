@@ -276,10 +276,58 @@ export default function App() {
   const targetYearMonth = `${printYear}-${printMonth}`;
   const filteredPrintRecords = records.filter(r => r.layanan === printService && r.tglKunjungan && r.tglKunjungan.startsWith(targetYearMonth));
 
+  // --- LOGIKA AUTO-CORRECT TYPO NEGARA (AI-BASED FUZZY MATCHING) ---
+  const getLevenshteinDistance = (a, b) => {
+    if(!a.length) return b.length;
+    if(!b.length) return a.length;
+    const matrix = [];
+    for(let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for(let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for(let i = 1; i <= b.length; i++) {
+      for(let j = 1; j <= a.length; j++) {
+        if(b.charAt(i-1) === a.charAt(j-1)) {
+          matrix[i][j] = matrix[i-1][j-1];
+        } else {
+          matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1));
+        }
+      }
+    }
+    return matrix[b.length][a.length];
+  };
+
+  // Kamus Referensi Negara (Akan terus bertambah sesuai kebutuhan)
+  const knownCountries = ["CHINA", "JEPANG", "YORDANIA", "KOREA", "KOREA SELATAN", "ARAB SAUDI", "AMERIKA", "AMERIKA SERIKAT", "INDIA", "AUSTRALIA", "QATAR", "PERANCIS", "MALAYSIA", "KAZAKHSTAN", "INGGRIS", "SINGAPURA", "TAIWAN", "THAILAND", "JERMAN", "BELANDA", "RUSIA", "FILIPINA", "VIETNAM", "ITALIA", "SPANYOL"];
+
+  const smartCorrectCountry = (input) => {
+    let normalized = input.trim().toUpperCase();
+    if (!normalized || normalized === '-') return '-';
+    
+    // Jika persis sama, kembalikan data langsung
+    if (knownCountries.includes(normalized)) return normalized;
+
+    let bestMatch = normalized;
+    let minDistance = 2; // Toleransi Typo Maksimal (1-2 Huruf yang salah/kurang)
+    
+    for (let country of knownCountries) {
+      let dist = getLevenshteinDistance(normalized, country);
+      // Koreksi dilakukan jika error maks 2 huruf & panjang nama negara > 4 huruf 
+      // (Mencegah salah koreksi pada negara pendek seperti IRAN dan IRAQ)
+      if (dist <= minDistance && normalized.length > 4) { 
+        minDistance = dist;
+        bestMatch = country;
+      }
+    }
+    return bestMatch;
+  };
+
   // --- LOGIKA GROUPING KHUSUS WISMAN UNTUK CETAK ---
   const wismanGrouped = Object.values(filteredPrintRecords.reduce((acc, curr) => {
     if (printService !== 'wisman') return acc;
-    const country = curr.details?.['Asal Negara'] || '-';
+    
+    // Aplikasikan Koreksi AI ke teks input asal negara
+    const rawCountry = curr.details?.['Asal Negara'] || '-';
+    const country = smartCorrectCountry(rawCountry);
+
     const count = parseInt(curr.headCount) || 1;
     if (!acc[country]) acc[country] = { country, dewasa: 0, anak: 0, total: 0 };
     if (curr.details?.Kategori === 'Dewasa') acc[country].dewasa += count;
