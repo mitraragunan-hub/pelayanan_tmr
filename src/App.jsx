@@ -274,7 +274,10 @@ export default function App() {
 
   // --- DATA UNTUK LAPORAN CETAK ---
   const targetYearMonth = `${printYear}-${printMonth}`;
-  const filteredPrintRecords = records.filter(r => r.layanan === printService && r.tglKunjungan && r.tglKunjungan.startsWith(targetYearMonth));
+  const filteredPrintRecords = records.filter(r => {
+    const targetLayanan = printService === 'wisman_rekap' ? 'wisman' : printService;
+    return r.layanan === targetLayanan && r.tglKunjungan && r.tglKunjungan.startsWith(targetYearMonth);
+  });
 
   // --- LOGIKA AUTO-CORRECT TYPO NEGARA (AI-BASED FUZZY MATCHING) ---
   const getLevenshteinDistance = (a, b) => {
@@ -322,7 +325,7 @@ export default function App() {
 
   // --- LOGIKA GROUPING KHUSUS WISMAN UNTUK CETAK ---
   const wismanGrouped = Object.values(filteredPrintRecords.reduce((acc, curr) => {
-    if (printService !== 'wisman') return acc;
+    if (printService !== 'wisman_rekap') return acc;
     
     // Aplikasikan Koreksi AI ke teks input asal negara
     const rawCountry = curr.details?.['Asal Negara'] || '-';
@@ -551,7 +554,8 @@ export default function App() {
                             <option value="disabilitas">Layanan Gratis Disabilitas / SLB</option>
                             <option value="kjp">Peserta Didik KJP</option>
                             <option value="rombongan">Kunjungan Rombongan Sekolah</option>
-                            <option value="wisman">Kunjungan Wisatawan Mancanegara</option>
+                            <option value="wisman">Kunjungan Wisatawan Mancanegara (Detail Harian)</option>
+                            <option value="wisman_rekap">Kunjungan Wisatawan Mancanegara (Rekap Negara)</option>
                         </select>
                     </div>
                     <div>
@@ -580,7 +584,7 @@ export default function App() {
                         {printService === 'disabilitas' && 'DATA LAYANAN GRATIS BAGI PENYANDANG DISABILITAS'}
                         {printService === 'kjp' && 'DATA LAYANAN GRATIS BAGI PESERTA DIDIK KARTU JAKARTA PINTAR'}
                         {printService === 'rombongan' && 'DATA KUNJUNGAN ROMBONGAN SEKOLAH'}
-                        {printService === 'wisman' && 'DATA KUNJUNGAN WISATAWAN MANCANEGARA'}
+                        {printService.startsWith('wisman') && 'DATA KUNJUNGAN WISATAWAN MANCANEGARA'}
                     </h1>
                     <h2 className="text-center font-bold text-[12pt] uppercase mt-2">UNIT PENGELOLA TAMAN MARGASATWA RAGUNAN</h2>
                     <h2 className="text-center font-bold text-[12pt] uppercase">DINAS PERTAMANAN DAN HUTAN KOTA PROVINSI DKI JAKARTA</h2>
@@ -617,11 +621,19 @@ export default function App() {
                                 <tr className="bg-gray-100 font-bold uppercase"><th className="border border-black p-2 w-12">TK/KB</th><th className="border border-black p-2 w-12">SD</th><th className="border border-black p-2 w-12">SMP</th><th className="border border-black p-2 w-12">SMA</th><th className="border border-black p-2 w-12">PT</th></tr>
                             )}
 
-                            {/* Format Header Wisman (Direvisi tanpa Tanggal) */}
+                            {/* Format Header Wisman (Detail) */}
                             {printService === 'wisman' && (
                                 <tr className="bg-gray-100 font-bold uppercase"><th className="border border-black p-2 w-10" rowSpan="2">NO</th><th className="border border-black p-2 w-24" rowSpan="2">TANGGAL</th><th className="border border-black p-2" rowSpan="2">ASAL NEGARA</th><th className="border border-black p-2" colSpan="2">JUMLAH WISMAN</th><th className="border border-black p-2 w-24" rowSpan="2">TOTAL</th></tr>
                             )}
                             {printService === 'wisman' && (
+                                <tr className="bg-gray-100 font-bold uppercase"><th className="border border-black p-2 w-24">DEWASA</th><th className="border border-black p-2 w-24">ANAK</th></tr>
+                            )}
+
+                            {/* Format Header Wisman (Rekap Negara) */}
+                            {printService === 'wisman_rekap' && (
+                                <tr className="bg-gray-100 font-bold uppercase"><th className="border border-black p-2 w-10" rowSpan="2">NO</th><th className="border border-black p-2" rowSpan="2">ASAL NEGARA</th><th className="border border-black p-2" colSpan="2">JUMLAH WISMAN</th><th className="border border-black p-2 w-24" rowSpan="2">TOTAL</th></tr>
+                            )}
+                            {printService === 'wisman_rekap' && (
                                 <tr className="bg-gray-100 font-bold uppercase"><th className="border border-black p-2 w-24">DEWASA</th><th className="border border-black p-2 w-24">ANAK</th></tr>
                             )}
                         </thead>
@@ -630,34 +642,29 @@ export default function App() {
                             {filteredPrintRecords.length === 0 ? (
                                 <tr><td colSpan="10" className="border border-black p-4 text-center italic text-gray-500">Tidak ada data kunjungan pada bulan ini.</td></tr>
                             ) : (
-                                filteredPrintRecords.map((item, index) => {
-                                    const d = item.details || {};
-                                    const tglFormat = item.tglKunjungan ? item.tglKunjungan.split('-').reverse().join('-') : '-';
-                                    const hCount = parseInt(item.headCount) || 1;
+                                printService === 'wisman_rekap' ? (
+                                    wismanGrouped.map((item, index) => (
+                                        <tr key={index}>
+                                            <td className="border border-black p-2">{index + 1}</td>
+                                            <td className="border border-black p-2 text-left uppercase">{item.country}</td>
+                                            <td className="border border-black p-2">{item.dewasa || '-'}</td>
+                                            <td className="border border-black p-2">{item.anak || '-'}</td>
+                                            <td className="border border-black p-2 font-bold">{item.total}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    filteredPrintRecords.map((item, index) => {
+                                        const d = item.details || {};
+                                        const tglFormat = item.tglKunjungan ? item.tglKunjungan.split('-').reverse().join('-') : '-';
+                                        const hCount = parseInt(item.headCount) || 1;
 
-                                    if(printService === 'lansia') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d.Nama||'-'}</td><td className="border border-black p-2">{d.TTL||'-'}</td><td className="border border-black p-2">{d.NIK||'-'}</td><td className="border border-black p-2 text-left text-xs">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
-                                    }
-                                    if(printService === 'disabilitas') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama/Instansi']||'-'}</td><td className="border border-black p-2">{d['No Surat']||'-'}</td><td className="border border-black p-2 text-left text-xs">{d.Alamat||'-'}</td><td className="border border-black p-2">{hCount}</td></tr>);
-                                    }
-                                    if(printService === 'kjp') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d.Nama||'-'}</td><td className="border border-black p-2">{d.NISN||'-'}</td><td className="border border-black p-2 text-left">{d['Asal Sekolah/PT']||'-'}</td><td className="border border-black p-2">{d.Kategori==='Dewasa'?hCount:'-'}</td><td className="border border-black p-2">{d.Kategori==='Anak'?hCount:'-'}</td></tr>);
-                                    }
-                                    if(printService === 'rombongan') {
-                                        const tk = d.Jenjang === 'TK/KB' ? hCount : '-';
-                                        const sd = d.Jenjang === 'SD' ? hCount : '-';
-                                        const smp = d.Jenjang === 'SMP' ? hCount : '-';
-                                        const sma = d.Jenjang === 'SMA' ? hCount : '-';
-                                        const pt = d.Jenjang === 'Perguruan Tinggi' ? hCount : '-';
-                                        const diskon = d['Potongan Harga']==='Ya' ? 'Diskon' : 'Tidak Diskon';
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left">{d['Nama Sekolah']||'-'}</td><td className="border border-black p-2">{tk}</td><td className="border border-black p-2">{sd}</td><td className="border border-black p-2">{smp}</td><td className="border border-black p-2">{sma}</td><td className="border border-black p-2">{pt}</td><td className="border border-black p-2 text-xs">{diskon}</td></tr>);
-                                    }
-                                    if(printService === 'wisman') {
-                                        return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left uppercase">{smartCorrectCountry(d['Asal Negara'])}</td><td className="border border-black p-2">{d.Kategori==='Dewasa'?hCount:'-'}</td><td className="border border-black p-2">{d.Kategori==='Anak'?hCount:'-'}</td><td className="border border-black p-2 font-bold">{hCount}</td></tr>);
-                                    }
-                                    return null;
-                                })
+                                        if(printService === 'lansia') {
+                                        if(printService === 'wisman') {
+                                            return (<tr key={item.id}><td className="border border-black p-2">{index+1}</td><td className="border border-black p-2">{tglFormat}</td><td className="border border-black p-2 text-left uppercase">{smartCorrectCountry(d['Asal Negara'])}</td><td className="border border-black p-2">{d.Kategori==='Dewasa'?hCount:'-'}</td><td className="border border-black p-2">{d.Kategori==='Anak'?hCount:'-'}</td><td className="border border-black p-2 font-bold">{hCount}</td></tr>);
+                                        }
+                                        return null;
+                                    })
+                                )
                             )}
                         </tbody>
                         
@@ -669,7 +676,7 @@ export default function App() {
                                     {printService === 'disabilitas' && <><td colSpan="5" className="border border-black p-2 text-right pr-4">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
                                     {printService === 'kjp' && <><td colSpan="5" className="border border-black p-2 text-right pr-4">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Dewasa').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Anak').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td></>}
                                     {printService === 'rombongan' && <><td colSpan="3" className="border border-black p-2 text-right pr-4">J U M L A H</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='TK/KB').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SD').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SMP').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='SMA').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Jenjang==='Perguruan Tinggi').reduce((acc, c)=>acc+(parseInt(c.headCount)||1), 0)}</td><td className="border border-black p-2">-</td></>}
-                                    {printService === 'wisman' && <><td colSpan="3" className="border border-black p-2 text-right pr-4">J U M L A H</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Dewasa').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Anak').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
+                                    {(printService === 'wisman' || printService === 'wisman_rekap') && <><td colSpan={printService === 'wisman' ? "3" : "2"} className="border border-black p-2 text-right pr-4">J U M L A H</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Dewasa').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.filter(r=>r.details?.Kategori==='Anak').reduce((acc, curr)=>acc+(parseInt(curr.headCount)||1), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.reduce((acc, curr)=> acc + (parseInt(curr.headCount)||1), 0)}</td></>}
                                 </tr>
                             </tfoot>
                         )}
