@@ -231,6 +231,51 @@ export default function App() {
     return months[parseInt(monthNum) - 1];
   };
 
+  // --- LOGIKA AUTO-CORRECT TYPO NEGARA (AI-BASED FUZZY MATCHING) ---
+  const getLevenshteinDistance = (a, b) => {
+    if(!a.length) return b.length;
+    if(!b.length) return a.length;
+    const matrix = [];
+    for(let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for(let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for(let i = 1; i <= b.length; i++) {
+      for(let j = 1; j <= a.length; j++) {
+        if(b.charAt(i-1) === a.charAt(j-1)) {
+          matrix[i][j] = matrix[i-1][j-1];
+        } else {
+          matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1));
+        }
+      }
+    }
+    return matrix[b.length][a.length];
+  };
+
+  // Kamus Referensi Negara (Akan terus bertambah sesuai kebutuhan)
+  const knownCountries = ["CHINA", "JEPANG", "YORDANIA", "KOREA", "KOREA SELATAN", "ARAB SAUDI", "AMERIKA", "AMERIKA SERIKAT", "INDIA", "AUSTRALIA", "QATAR", "PERANCIS", "MALAYSIA", "KAZAKHSTAN", "INGGRIS", "SINGAPURA", "TAIWAN", "THAILAND", "JERMAN", "BELANDA", "RUSIA", "FILIPINA", "VIETNAM", "ITALIA", "SPANYOL", "PORTUGAL", "SIPRUS", "PAKISTAN", "NEW ZEALAND", "SRI LANKA"];
+
+  const smartCorrectCountry = (input) => {
+    let normalized = input.trim().toUpperCase();
+    if (!normalized || normalized === '-') return '-';
+    
+    // Jika persis sama, kembalikan data langsung
+    if (knownCountries.includes(normalized)) return normalized;
+
+    let bestMatch = normalized;
+    let minDistance = 2; // Toleransi Typo Maksimal (1-2 Huruf yang salah/kurang)
+    
+    for (let country of knownCountries) {
+      let dist = getLevenshteinDistance(normalized, country);
+      // Koreksi dilakukan jika error maks 2 huruf & panjang nama negara > 4 huruf 
+      // (Mencegah salah koreksi pada negara pendek seperti IRAN dan IRAQ)
+      if (dist <= minDistance && normalized.length > 4) { 
+        minDistance = dist;
+        bestMatch = country;
+      }
+    }
+    return bestMatch;
+  };
+
+
   // --- TAMPILAN LOADING ---
   if (isCheckingAuth) {
     return (
@@ -278,66 +323,6 @@ export default function App() {
     const targetLayanan = printService === 'wisman_rekap' ? 'wisman' : printService;
     return r.layanan === targetLayanan && r.tglKunjungan && r.tglKunjungan.startsWith(targetYearMonth);
   });
-
-  // --- LOGIKA AUTO-CORRECT TYPO NEGARA (AI-BASED FUZZY MATCHING) ---
-  const getLevenshteinDistance = (a, b) => {
-    if(!a.length) return b.length;
-    if(!b.length) return a.length;
-    const matrix = [];
-    for(let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
-    for(let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
-    for(let i = 1; i <= b.length; i++) {
-      for(let j = 1; j <= a.length; j++) {
-        if(b.charAt(i-1) === a.charAt(j-1)) {
-          matrix[i][j] = matrix[i-1][j-1];
-        } else {
-          matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1));
-        }
-      }
-    }
-    return matrix[b.length][a.length];
-  };
-
-  // Kamus Referensi Negara (Akan terus bertambah sesuai kebutuhan)
-  const knownCountries = ["CHINA", "JEPANG", "YORDANIA", "KOREA", "KOREA SELATAN", "ARAB SAUDI", "AMERIKA", "AMERIKA SERIKAT", "INDIA", "AUSTRALIA", "QATAR", "PERANCIS", "MALAYSIA", "KAZAKHSTAN", "INGGRIS", "SINGAPURA", "TAIWAN", "THAILAND", "JERMAN", "BELANDA", "RUSIA", "FILIPINA", "VIETNAM", "ITALIA", "SPANYOL"];
-
-  const smartCorrectCountry = (input) => {
-    let normalized = input.trim().toUpperCase();
-    if (!normalized || normalized === '-') return '-';
-    
-    // Jika persis sama, kembalikan data langsung
-    if (knownCountries.includes(normalized)) return normalized;
-
-    let bestMatch = normalized;
-    let minDistance = 2; // Toleransi Typo Maksimal (1-2 Huruf yang salah/kurang)
-    
-    for (let country of knownCountries) {
-      let dist = getLevenshteinDistance(normalized, country);
-      // Koreksi dilakukan jika error maks 2 huruf & panjang nama negara > 4 huruf 
-      // (Mencegah salah koreksi pada negara pendek seperti IRAN dan IRAQ)
-      if (dist <= minDistance && normalized.length > 4) { 
-        minDistance = dist;
-        bestMatch = country;
-      }
-    }
-    return bestMatch;
-  };
-
-  // --- LOGIKA GROUPING KHUSUS WISMAN UNTUK CETAK ---
-  const wismanGrouped = Object.values(filteredPrintRecords.reduce((acc, curr) => {
-    if (printService !== 'wisman_rekap') return acc;
-    
-    // Aplikasikan Koreksi AI ke teks input asal negara
-    const rawCountry = curr.details?.['Asal Negara'] || '-';
-    const country = smartCorrectCountry(rawCountry);
-
-    const count = parseInt(curr.headCount) || 1;
-    if (!acc[country]) acc[country] = { country, dewasa: 0, anak: 0, total: 0 };
-    if (curr.details?.Kategori === 'Dewasa') acc[country].dewasa += count;
-    if (curr.details?.Kategori === 'Anak') acc[country].anak += count;
-    acc[country].total += count;
-    return acc;
-  }, {})).sort((a, b) => b.total - a.total);
 
   // --- TAMPILAN UTAMA APLIKASI ---
   return (
@@ -624,9 +609,23 @@ export default function App() {
                          <tr className="bg-gray-50 font-bold uppercase"><td colSpan={printService === 'wisman_rekap' ? "2" : "3"} className="border border-black p-2 text-right">TOTAL</td><td className="border border-black p-2">{filteredPrintRecords.reduce((a,c) => a + (c.details.Kategori === 'Dewasa' ? c.headCount : 0), 0)}</td><td className="border border-black p-2">{filteredPrintRecords.reduce((a,c) => a + (c.details.Kategori === 'Anak' ? c.headCount : 0), 0)}</td><td className="border border-black p-2 font-bold">{filteredPrintRecords.reduce((a,c) => a + c.headCount, 0)}</td></tr>
                     </tfoot>
                 </table>
-// ... sisa kode tanda tangan tetap sama
-```
 
-*Catatan: Saya menggunakan fungsi `smartCorrectCountry` (AI fuzzy matching) yang sudah kita buat sebelumnya hanya di menu **Rekap Per Negara**, sehingga laporan detail harian tetap menampilkan penulisan asli sesuai input petugas (untuk arsip audit yang akurat).*
+                {/* Kolom Tanda Tangan */}
+                <div className="flex justify-end mt-12 text-center text-[12pt] print:break-inside-avoid">
+                    <div className="w-80">
+                        <p className="mb-1">Jakarta, ....... {getBulanName(printMonth)} {printYear}</p>
+                        <p className="mb-1">Kepala Seksi Pelayanan dan Informasi</p>
+                        <p className="mb-1">Unit Pengelola Taman Margasatwa Ragunan</p>
+                        <p className="mb-24">Dinas Pertamanan dan Hutan Kota Provinsi DKI Jakarta</p>
+                        <p className="font-bold underline mb-1">Afriana Pulungan, S.Si., M.AP.</p>
+                        <p>NIP 197304212007012021</p>
+                    </div>
+                </div>
 
-Silakan *Update* kodenya dan sekarang Anda punya dua opsi laporan untuk Wisman: **Detail Harian** (untuk bukti per hari) dan **Rekap Per Negara** (untuk laporan bulanan yang rapi)!
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
